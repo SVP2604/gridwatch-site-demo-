@@ -40,6 +40,8 @@ jobs:
           # so it cannot reach a browser.
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           INSIGHT_COUNT: '25'
+          # No database in the runner; the call count is bounded by INSIGHT_COUNT.
+          GEMINI_NO_BUDGET: '1'
         run: node scripts/build-feed.mjs .
 
       - name: 정적 페이지 빌드
