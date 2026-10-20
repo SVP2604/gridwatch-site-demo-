@@ -1,0 +1,59 @@
+name: 수집 및 배포
+
+# This repository has no server. The feed is produced here and committed to
+# docs/, which GitHub Pages serves. Vercel and the Postgres database are not
+# involved, so there is nothing that can hit a usage limit and stop the site.
+on:
+  schedule:
+    # Hourly. GitHub often delays scheduled runs by several minutes under load;
+    # that is acceptable for a news feed.
+    - cron: '7 * * * *'
+  workflow_dispatch: # 수동 실행 버튼
+  push:
+    branches: [main]
+    paths: ['app/**', 'lib/**', 'scripts/**', '.github/workflows/build.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-feed
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci --omit=dev
+
+      - name: 기사 수집 및 AI 시사점 생성
+        env:
+          # Lives only in the runner. The build never writes it into the output,
+          # so it cannot reach a browser.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          INSIGHT_COUNT: '25'
+        run: node scripts/build-feed.mjs .
+
+      - name: 정적 페이지 빌드
+        run: node scripts/build-static.mjs ..
+
+      - name: 변경분 커밋
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A index.html demo.html check.html articles.json robots.txt .nojekyll
+          # A run with no new articles and no new write-ups is normal.
+          if git diff --cached --quiet; then
+            echo "변경 없음"
+          else
+            git commit -m "chore: 기사 자동 수집 $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
